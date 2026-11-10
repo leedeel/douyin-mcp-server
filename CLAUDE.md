@@ -60,17 +60,20 @@ All timing constants live in the exported `CONFIG` object (`TIMEOUTS.*`, `UPLOAD
 
 The uploader drives Douyin's SPA by scraping Chinese UI text (`发布`, `立即发布`, `选择封面`, `确认`, `验证码`). Every button lookup is a text match over `button` elements and CSS class substrings like `[class*="cover"]`. Douyin class names are minified and change without notice, so **selectors are the most likely thing to break**; when an upload fails, run it non-headless and watch the browser.
 
-### Cookie & browser-data locations (path-dependent!)
+### Cookie & browser-data locations
 
-`cookiesPath` is resolved relative to the *compiled file's* `__dirname`, so it differs per entry point:
+All entry points share one data directory, resolved by `resolveDataDir()` in `douyin-uploader.ts`: the nearest ancestor containing **both** `package.json` and a `mcp-server/` subdirectory — i.e. the repo root. `DOUYIN_DATA_DIR` overrides it.
 
 | Entry point | Cookies | Browser data |
 |---|---|---|
 | `scripts/*.ts` via tsx | `<repo>/douyin-cookies.json` | `<repo>/chrome-user-data/` |
-| `mcp-server/dist/mcp-server/index.js` | `<repo>/mcp-server/dist/douyin-cookies.json` | `.../dist/chrome-user-data/` |
-| `skills/douyin/` bundle | `<repo>/skills/douyin/douyin-cookies.json` | `skills/douyin/chrome-user-data/` |
+| `mcp-server/dist/mcp-server/index.js` | same | same |
+| `skills/douyin/` in-repo | same | same |
+| `skills/douyin/` installed standalone | `<skill-dir>/douyin-cookies.json` | `<skill-dir>/chrome-user-data/` |
 
-A login performed via the CLI is therefore **not** visible to the compiled MCP server. `douyin-cookies.json` and `chrome-user-data/` are gitignored.
+So a CLI login is visible to the compiled MCP server and vice versa, and the session survives `git clean` (it no longer lives inside `dist/`). A standalone skill stays self-contained. `douyin-cookies.json` and `chrome-user-data/` are gitignored.
+
+The marker must require **both** `package.json` and `mcp-server/`. The compiled output sits at `mcp-server/dist/mcp-server/`, and `mcp-server/dist/` also contains a directory named `mcp-server` — matching the subdirectory name alone resolves to `dist/` and puts the cookie back in the build output.
 
 ### MCP server (mcp-server/index.ts)
 
@@ -80,17 +83,18 @@ Tools: `douyin_login`, `douyin_check_login`, `douyin_upload_video`, `douyin_get_
 
 ### `skills/douyin/` is a hand-synced compiled copy
 
-The skill bundle (`douyin-uploader.js` + `scripts/*.js`) is the tsc output of the TS sources with one deliberate edit: the cookie path drops the `../` so files land next to the skill. **There is no build script that regenerates it** — past commits updated it by hand alongside the TS change.
+The skill bundle (`douyin-uploader.js` + `scripts/*.js`) is the tsc output of the TS sources. **There is no build script that regenerates it** — past commits updated it by hand alongside the TS change.
 
-So: when you change `mcp-server/douyin-uploader.ts` or `scripts/*.ts`, you must also mirror the change into `skills/douyin/` or the skill silently ships stale behavior. Regenerate the uploader with:
+So: when you change `mcp-server/douyin-uploader.ts` or `scripts/*.ts`, you must also mirror the change into `skills/douyin/` or the skill silently ships stale behavior. Regenerate with:
 
 ```bash
 cd mcp-server && npx tsc && \
-  sed "s|'\.\./douyin-cookies.json'|'douyin-cookies.json'|; s|'\.\./chrome-user-data'|'chrome-user-data'|" \
-    dist/mcp-server/douyin-uploader.js > ../skills/douyin/douyin-uploader.js
+  cp dist/mcp-server/douyin-uploader.js ../skills/douyin/douyin-uploader.js
 ```
 
-The two `sed` expressions are the *only* intentional differences — they drop the `../` so cookies land next to the skill. The `skills/douyin/scripts/*.js` files carry two more deliberate adaptations (`npx tsx` → `node` in the shebang and usage strings, and the import path `../mcp-server/douyin-uploader.js` → `../douyin-uploader.js`); they are otherwise plain tsc output.
+The uploader is a byte-for-byte copy — the data directory is resolved at runtime, so no path patching is needed.
+
+The `skills/douyin/scripts/*.js` files still carry three deliberate adaptations: the shebang and the usage strings say `node scripts/x.js` instead of `npx tsx scripts/x.ts`, and the import is `../douyin-uploader.js` instead of `../mcp-server/douyin-uploader.js`. Everything else is plain tsc output.
 
 ## Gotchas
 

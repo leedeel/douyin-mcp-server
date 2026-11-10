@@ -1,10 +1,47 @@
 import puppeteer, { Browser, Page } from 'puppeteer';
 import fs from 'fs/promises';
+import { existsSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+/**
+ * 统一的数据目录（cookie 与浏览器 profile 的存放位置）
+ *
+ * 解析顺序：
+ * 1. 环境变量 DOUYIN_DATA_DIR —— 显式指定，优先级最高
+ * 2. 从本文件所在目录向上查找「同时包含 package.json 和 mcp-server/ 子目录」的目录
+ *    —— 那就是仓库根目录，CLI、编译后的 MCP server、以及仓库内的 skill 都会落到这里
+ * 3. 都没有找到（例如 skill 被单独安装到仓库之外）→ 回退到本文件所在目录，保持自包含
+ *
+ * 注意：判定条件必须同时要求 package.json 和 mcp-server/。
+ * 编译产物位于 mcp-server/dist/mcp-server/，而 mcp-server/dist/ 下也有一个叫
+ * mcp-server 的目录，只看子目录名会误判成 dist/，又回到旧的老毛病。
+ */
+export function resolveDataDir(startDir: string = __dirname): string {
+  const envDir = process.env.DOUYIN_DATA_DIR;
+  if (envDir) {
+    return path.resolve(envDir);
+  }
+
+  let dir = path.resolve(startDir);
+  for (let depth = 0; depth < 8; depth++) {
+    if (
+      existsSync(path.join(dir, 'package.json')) &&
+      existsSync(path.join(dir, 'mcp-server'))
+    ) {
+      return dir;
+    }
+
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+
+  return path.resolve(startDir);
+}
 
 // 配置常量
 export const CONFIG = {
@@ -66,8 +103,9 @@ export class DouyinUploader {
   private userDataDir: string;
 
   constructor() {
-    this.cookiesPath = path.join(__dirname, '../douyin-cookies.json');
-    this.userDataDir = path.join(__dirname, '../chrome-user-data');
+    const dataDir = resolveDataDir();
+    this.cookiesPath = path.join(dataDir, 'douyin-cookies.json');
+    this.userDataDir = path.join(dataDir, 'chrome-user-data');
   }
 
   async login(headless: boolean = false, timeout: number = 180000): Promise<LoginResult> {

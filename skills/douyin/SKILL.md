@@ -45,8 +45,9 @@ metadata:
 ## Transparency Statement | 透明度声明
 
 ### Data Storage | 数据存储
-- **Cookie file / Cookie 文件**: `{baseDir}/douyin-cookies.json` — Stores Douyin login credentials locally only (file permission: 0600) / 存储抖音登录凭证，仅在本地保存（文件权限：0600）
+- **Cookie file / Cookie 文件**: `{baseDir}/douyin-cookies.json` — Stores Douyin login credentials locally only (file permission: 0600) / 存储抖音登录凭证，仅在本地保存（文件权限：0600）。If this skill is used inside a douyin-mcp-server checkout, the repository root is used instead so the CLI and the skill share one session / 若本 skill 位于 douyin-mcp-server 仓库内，则统一使用仓库根目录，与 CLI 共用同一份登录态
 - **Browser data / 浏览器数据**: `{baseDir}/chrome-user-data/` — Puppeteer browser session data
+- **Override / 覆盖**: set `DOUYIN_DATA_DIR` to place both elsewhere / 设置 `DOUYIN_DATA_DIR` 可将两者放到其他位置
 
 ### Network Access | 网络访问
 This tool only accesses official Douyin domains / 本工具仅访问以下抖音官方域名：
