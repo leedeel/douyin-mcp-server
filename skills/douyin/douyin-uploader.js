@@ -272,47 +272,106 @@ export class DouyinUploader {
                         else {
                             console.error('ℹ️  验证码可能已发送，请查看手机');
                         }
-                        // 无论是否成功点击发送按钮，都等待用户输入验证码
-                        console.error('\n请输入收到的验证码：');
-                        // 等待用户输入验证码
-                        const readline = await import('readline');
-                        const rl = readline.createInterface({
-                            input: process.stdin,
-                            output: process.stdout
-                        });
-                        const verifyCode = await new Promise((resolve) => {
-                            rl.question('验证码: ', (answer) => {
-                                rl.close();
-                                resolve(answer.trim());
+                        // 等待用户完成验证
+                        // - 非无头模式：用户在浏览器窗口里直接输入验证码，这里轮询检测
+                        // - 无头模式：浏览器不可见，退回终端输入
+                        // 非无头模式全程不读取 stdin，避免与 MCP 的 stdio 通道抢输入
+                        const isHeadless = params.headless === true;
+                        const maxWaitTime = 300000; // 最多等待 5 分钟 - 给用户足够时间扫码登录和输入验证码
+                        const checkInterval = 3000; // 每 3 秒检查一次
+                        let waitedTime = 0;
+                        let verifyCode = '';
+                        if (isHeadless) {
+                            console.error('\n请输入收到的验证码：');
+                            // 等待用户输入验证码
+                            const readline = await import('readline');
+                            const rl = readline.createInterface({
+                                input: process.stdin,
+                                output: process.stdout
                             });
-                        });
-                        // 输入验证码
-                        const codeInputs = await page.$$('input[type="text"], input[type="tel"], input[placeholder*="验证码"]');
-                        if (codeInputs.length > 0) {
-                            // 如果是多个输入框（每位一个框）
-                            if (codeInputs.length === 6 || codeInputs.length === 4) {
-                                for (let i = 0; i < verifyCode.length && i < codeInputs.length; i++) {
-                                    await codeInputs[i].type(verifyCode[i]);
+                            verifyCode = await new Promise((resolve) => {
+                                rl.question('验证码: ', (answer) => {
+                                    rl.close();
+                                    resolve(answer.trim());
+                                });
+                            });
+                            // 输入验证码
+                            const codeInputs = await page.$$('input[type="text"], input[type="tel"], input[placeholder*="验证码"]');
+                            if (codeInputs.length > 0) {
+                                // 如果是多个输入框（每位一个框）
+                                if (codeInputs.length === 6 || codeInputs.length === 4) {
+                                    for (let i = 0; i < verifyCode.length && i < codeInputs.length; i++) {
+                                        await codeInputs[i].type(verifyCode[i]);
+                                    }
+                                }
+                                else {
+                                    // 单个输入框
+                                    await codeInputs[0].type(verifyCode);
                                 }
                             }
-                            else {
-                                // 单个输入框
-                                await codeInputs[0].type(verifyCode);
+                        }
+                        else {
+                            console.error('请在浏览器窗口中手动输入验证码...');
+                            console.error('⏳ 等待时间为 5 分钟，请完成扫码登录并输入验证码...');
+                            while (waitedTime < maxWaitTime) {
+                                await new Promise(r => setTimeout(r, checkInterval));
+                                waitedTime += checkInterval;
+                                // 检查验证码输入框是否已被填充
+                                const codeFilled = await page.evaluate(() => {
+                                    // 只认验证码输入框，避免把标题输入框的内容误当成验证码
+                                    const isCodeInput = (el) => {
+                                        const ph = el.getAttribute('placeholder') || '';
+                                        if (ph.includes('标题'))
+                                            return false;
+                                        if (ph.includes('验证码') || ph.includes('校验码'))
+                                            return true;
+                                        const box = el.closest('[class*="modal"],[class*="dialog"],[class*="Modal"],[class*="Dialog"],[class*="verify"],[class*="Verify"]');
+                                        return !!(box && /验证码|短信验证/.test(box.innerText || ''));
+                                    };
+                                    const inputs = Array.from(document.querySelectorAll('input')).filter(isCodeInput);
+                                    if (inputs.length === 0)
+                                        return null;
+                                    const values = inputs.map(i => (i.value || '').trim()).filter(Boolean);
+                                    if (values.length === 0)
+                                        return null;
+                                    const code = values.join('');
+                                    return code.length >= 4 ? code : null;
+                                });
+                                if (codeFilled) {
+                                    verifyCode = codeFilled;
+                                    console.error(`✅ 检测到验证码输入：${verifyCode}`);
+                                    break;
+                                }
+                                // 同时检查是否已经通过了验证（页面变化）
+                                const stillOnSmsPage = await page.evaluate(() => {
+                                    const text = document.body.innerText || '';
+                                    return text.includes('短信验证') || text.includes('验证码') || text.includes('手机验证');
+                                });
+                                if (!stillOnSmsPage) {
+                                    console.error('✅ 验证码已确认，继续发布流程');
+                                    verifyCode = 'auto-passed';
+                                    break;
+                                }
                             }
                         }
-                        // 点击确认按钮
-                        await page.evaluate(() => {
-                            const buttons = Array.from(document.querySelectorAll('button'));
-                            const confirmBtn = buttons.find(btn => {
-                                const text = btn.textContent?.trim() || '';
-                                return text.includes('确认') || text.includes('确定') || text.includes('提交') || text === '验证';
+                        if (!verifyCode) {
+                            console.error('⚠️ 等待验证码输入超时，但会继续尝试发布');
+                        }
+                        else if (verifyCode !== 'auto-passed') {
+                            // 验证码已输入，点击确认按钮
+                            await page.evaluate(() => {
+                                const buttons = Array.from(document.querySelectorAll('button'));
+                                const confirmBtn = buttons.find(btn => {
+                                    const text = btn.textContent?.trim() || '';
+                                    return text.includes('确认') || text.includes('确定') || text.includes('提交') || text === '验证';
+                                });
+                                if (confirmBtn && !confirmBtn.disabled) {
+                                    confirmBtn.click();
+                                }
                             });
-                            if (confirmBtn && !confirmBtn.disabled) {
-                                confirmBtn.click();
-                            }
-                        });
-                        console.error('✅ 验证码已提交');
-                        await new Promise(r => setTimeout(r, CONFIG.TIMEOUTS.PUBLISH_WAIT));
+                            console.error('✅ 验证码已提交');
+                            await new Promise(r => setTimeout(r, CONFIG.TIMEOUTS.PUBLISH_WAIT));
+                        }
                         // 再次尝试发布
                         await page.evaluate(() => {
                             const buttons = Array.from(document.querySelectorAll('button'));
