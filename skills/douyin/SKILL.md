@@ -17,7 +17,7 @@ metadata:
       - kind: node
         package: puppeteer
         bins: []
-    homepage: https://github.com/lancelin111/douyin-mcp-server
+    homepage: https://github.com/leedeel/douyin-mcp-server
     emoji: "\U0001F3AC"
     os:
       - macos

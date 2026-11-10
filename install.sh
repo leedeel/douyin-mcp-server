@@ -1,12 +1,12 @@
 #!/bin/bash
 #
 # Douyin Skills 一键安装脚本
-# 用法: curl -fsSL https://raw.githubusercontent.com/lancelin111/douyin-mcp-server/main/install.sh | bash
+# 用法: curl -fsSL https://raw.githubusercontent.com/leedeel/douyin-mcp-server/main/install.sh | bash
 #
 
 set -e
 
-REPO_URL="https://github.com/lancelin111/douyin-mcp-server.git"
+REPO_URL="https://github.com/leedeel/douyin-mcp-server.git"
 INSTALL_DIR="$HOME/.openclaw/workspace/douyin-mcp-server"
 SKILLS_DIR="$HOME/.openclaw/workspace/skills"
 

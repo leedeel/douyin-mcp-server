@@ -26,7 +26,7 @@
 
 ```bash
 # 1. 克隆项目
-git clone https://github.com/lancelin111/douyin-mcp-server.git
+git clone https://github.com/leedeel/douyin-mcp-server.git
 cd douyin-mcp-server
 
 # 2. 安装依赖并构建
