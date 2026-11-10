@@ -82,17 +82,19 @@ Tools: `douyin_login`, `douyin_check_login`, `douyin_upload_video`, `douyin_get_
 
 The skill bundle (`douyin-uploader.js` + `scripts/*.js`) is the tsc output of the TS sources with one deliberate edit: the cookie path drops the `../` so files land next to the skill. **There is no build script that regenerates it** — past commits updated it by hand alongside the TS change.
 
-So: when you change `mcp-server/douyin-uploader.ts` or `scripts/*.ts`, you must also mirror the change into `skills/douyin/` or the skill silently ships stale behavior. Verify with:
+So: when you change `mcp-server/douyin-uploader.ts` or `scripts/*.ts`, you must also mirror the change into `skills/douyin/` or the skill silently ships stale behavior. Regenerate the uploader with:
 
 ```bash
-cd mcp-server && npx tsc && diff <(sed 's/[[:space:]]\+/ /g' dist/mcp-server/douyin-uploader.js) \
-  <(sed 's/[[:space:]]\+/ /g' ../skills/douyin/douyin-uploader.js)
+cd mcp-server && npx tsc && \
+  sed "s|'\.\./douyin-cookies.json'|'douyin-cookies.json'|; s|'\.\./chrome-user-data'|'chrome-user-data'|" \
+    dist/mcp-server/douyin-uploader.js > ../skills/douyin/douyin-uploader.js
 ```
-(the only expected differences are the two `cookiesPath` / `userDataDir` lines, where the skill drops the `../`).
+
+The two `sed` expressions are the *only* intentional differences — they drop the `../` so cookies land next to the skill. The `skills/douyin/scripts/*.js` files carry two more deliberate adaptations (`npx tsx` → `node` in the shebang and usage strings, and the import path `../mcp-server/douyin-uploader.js` → `../douyin-uploader.js`); they are otherwise plain tsc output.
 
 ## Gotchas
 
-- **First upload after login triggers SMS verification.** The code is read from `process.stdin` via `readline` in `uploadVideo()`. This conflicts with the MCP server's `StdioServerTransport`, which owns the same stdin channel — in MCP mode the readline prompt will consume JSON-RPC bytes. Uploads that hit SMS verification are reliable via the **CLI** (`scripts/upload.ts`) and the skill bundle, not via MCP.
+- **First upload after login triggers SMS verification.** In headed mode the uploader polls the browser every 3s for up to 5 minutes, waiting for the user to type the code into the verification input — it never touches stdin, so it is safe under the MCP stdio transport. Headless mode has no visible browser to type into, so it falls back to a `readline` prompt on `process.stdin`, which **does** conflict with `StdioServerTransport` (the prompt would consume JSON-RPC bytes). Keep headless uploads on the CLI, not MCP.
 - **Never launch the MCP server via `npm start` — npm's banner goes to stdout and corrupts the JSON-RPC stream.** The banner (`> douyin-mcp-server@2.0.0 start`) is printed on stdout, so the client tries to parse it as JSON. MCP clients must invoke node directly:
   ```bash
   claude mcp add douyin --scope local -- node /abs/path/to/mcp-server/dist/mcp-server/index.js
